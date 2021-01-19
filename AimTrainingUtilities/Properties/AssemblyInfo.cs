@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("AimTrainingPlugin")]
+[assembly: AssemblyTitle("AimTrainingUtilities")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("AimTrainingPlugin")]
+[assembly: AssemblyProduct("AimTrainingUtilities")]
 [assembly: AssemblyCopyright("Copyright ©  2021")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -20,7 +20,7 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 
 // The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("800e9bb9-5e9e-40b5-aa33-0572db874945")]
+[assembly: Guid("8030c7dd-4d1f-415b-81db-02bc8ab85056")]
 
 // Version information for an assembly consists of the following four values:
 //

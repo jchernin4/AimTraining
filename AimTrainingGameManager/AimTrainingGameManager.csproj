@@ -4,11 +4,11 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>800e9bb9-5e9e-40b5-aa33-0572db874945</ProjectGuid>
+    <ProjectGuid>d81bc84f-c90c-4c22-a3eb-2d11567d7a43</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>AimTrainingPlugin</RootNamespace>
-    <AssemblyName>AimTrainingPlugin</AssemblyName>
+    <RootNamespace>AimTrainingGameManager</RootNamespace>
+    <AssemblyName>AimTrainingGameManager</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
