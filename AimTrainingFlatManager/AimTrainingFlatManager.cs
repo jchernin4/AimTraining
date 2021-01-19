@@ -21,6 +21,8 @@ namespace Oxide.Plugins {
 		 * then change spectating instead of its own team to a flag (isSpectating) and then maybe make another (isOnlySpectating) if they wish to stay spectating and not join a team (or could just keep team null)
 		 * Need a way to differentiate between flats, gamemodes, etc. but also need the player to be able to be in no games (isInGame or something?) with flatID and team null for example
 		 * 
+		 * Need to keep this on its own so it doesn't interfere with other plugins (this should just work for people in flats, and ignore everyone else) ^
+		 * 
 		 * TODO: I actually like that idea ^
 		 */
 
