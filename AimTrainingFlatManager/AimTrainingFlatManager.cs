@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 using UnityEngine;
 
 namespace Oxide.Plugins {
-	[Info("Aim Training Game Manager", "Fyre", "0.0.1")]
-	public class AimTrainingGameManager : RustPlugin {
+	[Info("Aim Training Flat Manager", "Fyre", "0.0.1")]
+	public class AimTrainingFlatManager : RustPlugin {
 
 		/**
 		 * For 1v1 ranked scrims, to make it simple have 1 arena where 2 people are fighting and have the rest spectating
@@ -26,33 +26,33 @@ namespace Oxide.Plugins {
 		 * TODO: I actually like that idea ^
 		 */
 
-		private List<Game> games;
+		private List<Flat> flats;
 
 		#region Oxide Hooks
 		void Init() {
 			Util.initFlatConfig();
-			games = new List<Game>();
+			flats = new List<Flat>();
 		}
 
 		// Moves players back to their team's spawn when they are too far away from it
 		object OnPlayerTick(BasePlayer player, PlayerTick msg, bool wasPlayerStalled) {
-			foreach (Game g in games) {
-				if (!g.isStarted) {
+			foreach (Flat flat in flats) {
+				if (!flat.isStarted) {
 					string side = null;
 
-					if (g.aTeamPlayers.Contains(player)) {
+					if (flat.aTeamPlayers.Contains(player)) {
 						side = "a";
 						break;
 
-					} else if (g.bTeamPlayers.Contains(player)) {
+					} else if (flat.bTeamPlayers.Contains(player)) {
 						side = "b";
 					}
 
 					if (side != null) {
 						Vector3 curPos = player.ServerPosition;
 						// TODO: Test this: Vector3 diff = g.GetSpawn(side) - curPos; and compare this instead (check if Math.abs(diff.x) or Math.abs(diff.z) is greater than 9)
-						if (Math.Abs(curPos.x - g.GetSpawn(side).x) > 9 || Math.Abs(curPos.z - g.GetSpawn(side).z) > 9) {
-							player.Teleport(g.GetSpawn(side));
+						if (Math.Abs(curPos.x - flat.GetSpawn(side).x) > 9 || Math.Abs(curPos.z - flat.GetSpawn(side).z) > 9) {
+							player.Teleport(flat.GetSpawn(side));
 						}
 
 						break;
@@ -75,29 +75,29 @@ namespace Oxide.Plugins {
 			BasePlayer victim = (BasePlayer)info.HitEntity;
 
 			bool sameTeam = false;
-			bool isAttackerInGame = false;
-			Game attackerGame = null;
-			foreach (Game game in games) {
-				if (game.aTeamPlayers.Contains(attacker)) {
-					if (game.aTeamPlayers.Contains(victim)) {
+			bool isAttackerInFlat = false;
+			Flat attackerFlat = null;
+			foreach (Flat flat in flats) {
+				if (flat.aTeamPlayers.Contains(attacker)) {
+					if (flat.aTeamPlayers.Contains(victim)) {
 						sameTeam = true;
 					}
-					isAttackerInGame = true;
-					attackerGame = game;
+					isAttackerInFlat = true;
+					attackerFlat = flat;
 					break;
 
-				} else if (game.bTeamPlayers.Contains(attacker)) {
-					if (game.bTeamPlayers.Contains(victim)) {
+				} else if (flat.bTeamPlayers.Contains(attacker)) {
+					if (flat.bTeamPlayers.Contains(victim)) {
 						sameTeam = true;
 					}
-					isAttackerInGame = true;
-					attackerGame = game;
+					isAttackerInFlat = true;
+					attackerFlat = flat;
 					break;
 				}
 			}
 
 			// TODO: Change "|| sameTeam" to enable friendly fire
-			if (isAttackerInGame && (!attackerGame.isStarted || sameTeam)) {
+			if (isAttackerInFlat && (!attackerFlat.isStarted || sameTeam)) {
 				info.damageTypes.ScaleAll(0);
 			}
 			return null;
@@ -117,18 +117,18 @@ namespace Oxide.Plugins {
 
 			BasePlayer killer = info.InitiatorPlayer;
 			// Checking if the killer is in a game
-			bool isKillerInGame = false;
-			Game killerGame = null;
-			foreach (Game game in games) {
-				if (game.aTeamPlayers.Contains(killer) || game.bTeamPlayers.Contains(killer)) {
-					isKillerInGame = true;
-					killerGame = game;
+			bool isKillerInFlat = false;
+			Flat killerFlat = null;
+			foreach (Flat flat in flats) {
+				if (flat.aTeamPlayers.Contains(killer) || flat.bTeamPlayers.Contains(killer)) {
+					isKillerInFlat = true;
+					killerFlat = flat;
 					break;
 				}
 			}
 
-			if (isKillerInGame) {
-				killerGame.OnPlayerKilled(player, info, rust);
+			if (isKillerInFlat) {
+				killerFlat.OnPlayerKilled(player, info, rust);
 
 			} else {
 				// This shouldn't happen (the killer wasn't in a game)
@@ -143,9 +143,9 @@ namespace Oxide.Plugins {
 
 		void OnPlayerDisconnected(BasePlayer player) {
 			player.Kill();
-			foreach (Game game in games) {
-				if (game.aTeamPlayers.Contains(player) || game.bTeamPlayers.Contains(player)) {
-					game.OnPlayerLeave(player);
+			foreach (Flat flat in flats) {
+				if (flat.aTeamPlayers.Contains(player) || flat.bTeamPlayers.Contains(player)) {
+					flat.OnPlayerLeave(player);
 				}
 			}
 		}
@@ -176,44 +176,44 @@ namespace Oxide.Plugins {
 		// TODO: If flat is full, send player to spectators, and send them back again if they try to join from spectator to a team
 		void JoinFlat(BasePlayer player, string command, string[] args) {
 			if (args.Length == 1 && int.Parse(args[0]) < 9) {
-				bool gameExists = false;
-				Game runningGame = null;
-				foreach (Game g in games) {
-					if (g.aTeamPlayers.Concat(g.bTeamPlayers).ToList().Contains(player)) {
-						rust.SendChatMessage(player, "", "You are already in a game. Type /leave to leave.", player.UserIDString);
+				bool flatExists = false;
+				Flat runningFlat = null;
+				foreach (Flat flat in flats) {
+					if (flat.aTeamPlayers.Concat(flat.bTeamPlayers).ToList().Contains(player)) {
+						rust.SendChatMessage(player, "", "You are already in a flat. Type /leave to leave.", player.UserIDString);
 						return;
 					}
 
-					if (g.flatID == int.Parse(args[0])) {
-						gameExists = true;
-						runningGame = g;
+					if (flat.flatID == int.Parse(args[0])) {
+						flatExists = true;
+						runningFlat = flat;
 						break;
 					}
 				}
 
-				if (gameExists) {
-					if (runningGame.aTeamPlayers.Count > runningGame.bTeamPlayers.Count) {
-						runningGame.OnPlayerJoinTeam(player, "b");
+				if (flatExists) {
+					if (runningFlat.aTeamPlayers.Count > runningFlat.bTeamPlayers.Count) {
+						runningFlat.OnPlayerJoinTeam(player, "b");
 					} else {
-						runningGame.OnPlayerJoinTeam(player, "a");
+						runningFlat.OnPlayerJoinTeam(player, "a");
 					}
 
 					/*
 					 * If the game object was created but there aren't any active players as leader, leadership is transferred to the connecting player.
 					 * Chances are, this will happen when there is nobody in the arena
 					 */
-					if (!runningGame.aTeamPlayers.Contains(runningGame.leader) && !runningGame.bTeamPlayers.Contains(runningGame.leader)) {
-						runningGame.OnLeaderUpdate(player);
+					if (!runningFlat.aTeamPlayers.Contains(runningFlat.leader) && !runningFlat.bTeamPlayers.Contains(runningFlat.leader)) {
+						runningFlat.OnLeaderUpdate(player);
 					}
 
 				} else {
-					runningGame = new Game(rust);
-					runningGame.flatID = int.Parse(args[0]);
+					runningFlat = new Flat(rust);
+					runningFlat.flatID = int.Parse(args[0]);
 					// Don't call OnLeaderUpdate here because its the first time the flat is being created
-					runningGame.leader = player;
-					games.Add(runningGame);
+					runningFlat.leader = player;
+					flats.Add(runningFlat);
 
-					runningGame.OnPlayerJoinTeam(player, "a");
+					runningFlat.OnPlayerJoinTeam(player, "a");
 				}
 
 				rust.SendChatMessage(player, "", "Sending you to flat " + args[0]);
@@ -222,19 +222,19 @@ namespace Oxide.Plugins {
 
 		[ChatCommand("leave")]
 		void Leave(BasePlayer player, string command, string[] args) {
-			foreach (Game game in games) {
-				if (game.aTeamPlayers.Contains(player) || game.bTeamPlayers.Contains(player)) {
-					if (game.isStarted) {
-						rust.SendChatMessage(player, "", "You may not leave a game that has already started.");
+			foreach (Flat flat in flats) {
+				if (flat.aTeamPlayers.Contains(player) || flat.bTeamPlayers.Contains(player)) {
+					if (flat.isStarted) {
+						rust.SendChatMessage(player, "", "You may not leave a flat that has already started.");
 
 					} else {
-						game.OnPlayerLeave(player);
+						flat.OnPlayerLeave(player);
 					}
 
 					return;
 				}
 			}
-			rust.SendChatMessage(player, "", "You are not in a game.");
+			rust.SendChatMessage(player, "", "You are not in a flat.");
 		}
 
 		[ChatCommand("spawn")]
@@ -243,21 +243,21 @@ namespace Oxide.Plugins {
 		}
 
 		[ChatCommand("start")]
-		void StartGame(BasePlayer player, string command, string[] args) {
-			foreach (Game g in games) {
-				if (g.aTeamPlayers.Concat(g.bTeamPlayers).ToList().Contains(player)) {
-					if (g.leader.Equals(player)) {
-						if (!g.isStarted) {
-							if (g.aTeamPlayers.Count > 0 && g.bTeamPlayers.Count > 0) {
-								g.StartRound();
-								foreach (BasePlayer p in g.aTeamPlayers.Concat(g.bTeamPlayers)) {
+		void StartFlat(BasePlayer player, string command, string[] args) {
+			foreach (Flat flat in flats) {
+				if (flat.aTeamPlayers.Concat(flat.bTeamPlayers).ToList().Contains(player)) {
+					if (flat.leader.Equals(player)) {
+						if (!flat.isStarted) {
+							if (flat.aTeamPlayers.Count > 0 && flat.bTeamPlayers.Count > 0) {
+								flat.StartRound();
+								foreach (BasePlayer p in flat.aTeamPlayers.Concat(flat.bTeamPlayers)) {
 									rust.SendChatMessage(p, "", "A round has started!");
 								}
 
 								break;
 
 							} else {
-								rust.SendChatMessage(player, "", "There are not enough players on this flat to start a game.");
+								rust.SendChatMessage(player, "", "There are not enough players on this flat to start.");
 							}
 
 						} else {
@@ -265,26 +265,26 @@ namespace Oxide.Plugins {
 						}
 
 					} else {
-						rust.SendChatMessage(player, "", "You are not this flat's leader. Ask " + g.leader.displayName + " to type /start");
+						rust.SendChatMessage(player, "", "You are not this flat's leader. Ask " + flat.leader.displayName + " to type /start");
 					}
 					return;
 				}
 			}
 
-			rust.SendChatMessage(player, "", "You are not in a game.");
+			rust.SendChatMessage(player, "", "You are not in a flat.");
 		}
 
 		#endregion
 	}
 
-	public class Game {
+	public class Flat {
 		public int flatID;
 		public BasePlayer leader;
 		public List<BasePlayer> aTeamPlayers;
 		public List<BasePlayer> bTeamPlayers;
 		public Dictionary<BasePlayer, string> spectators;
 
-		private Oxide.Game.Rust.Libraries.Rust rust;
+		private Game.Rust.Libraries.Rust rust;
 
 		public List<string> kitAttire;
 		public List<string> kitWeapons;
@@ -293,7 +293,7 @@ namespace Oxide.Plugins {
 
 		public bool isStarted;
 
-		public Game(Oxide.Game.Rust.Libraries.Rust rust) {
+		public Flat(Game.Rust.Libraries.Rust rust) {
 			aTeamPlayers = new List<BasePlayer>();
 			bTeamPlayers = new List<BasePlayer>();
 			spectators = new Dictionary<BasePlayer, string>();
@@ -330,7 +330,7 @@ namespace Oxide.Plugins {
 			foreach (BasePlayer p in aTeamPlayers.Concat(bTeamPlayers).ToList()) {
 				HealAndGiveKit(p);
 			}
-			// Allow movement/placing walls/damage/etc.
+			// Allow movement/placing walls/damage/etc. (Movement is controlled in OnPlayerTick)
 		}
 
 		public void EndRound() {
@@ -384,7 +384,7 @@ namespace Oxide.Plugins {
 		}
 
 		#region Events
-		public void OnPlayerKilled(BasePlayer victim, HitInfo info, Oxide.Game.Rust.Libraries.Rust rust) {
+		public void OnPlayerKilled(BasePlayer victim, HitInfo info, Game.Rust.Libraries.Rust rust) {
 			// Send kill message
 			BasePlayer killer = info.InitiatorPlayer;
 
