@@ -148,6 +148,7 @@ namespace Oxide.Plugins {
 		}
 
 		void OnPlayerDisconnected(BasePlayer player) {
+			// Killing player -> OnPlayerDeath hook, OnPlayerDeath lets the player die -> Flat.OnPlayerLeave should remove player from flat/end round if necessary
 			player.Kill();
 			foreach (Flat flat in flats) {
 				if (flat.aTeamPlayers.Contains(player) || flat.bTeamPlayers.Contains(player)) {
@@ -164,6 +165,7 @@ namespace Oxide.Plugins {
 		void OnEntitySpawned(BaseNetworkable entity) {
 			string[] deletePrefabs = new string[] { "hotairballoon.prefab", "stone-collectable.prefab", "testridablehorse.prefab", "horse.corpse.prefab" };
 
+			// TODO: Change once you get a test account, used for testing with fake players spawned through console
 			if (entity.name.EndsWith("player.prefab")) {
 				JoinFlat((BasePlayer)entity, "flat", new string[] { "0" });
 			}
@@ -307,7 +309,7 @@ namespace Oxide.Plugins {
 			kitAttire = new List<string>();
 			kitWeapons = new List<string>();
 			kitAmmo = new List<string>();
-			kitMeds = new Dictionary<string, int>(); // Allow choosing of how many of each med to give
+			kitMeds = new Dictionary<string, int>(); // Allow choosing of how many of each med to give (key is med type, int is number to give)
 
 			this.rust = rust;
 
@@ -348,7 +350,7 @@ namespace Oxide.Plugins {
 				winner = "A";
 			}
 
-			foreach (BasePlayer p in aTeamPlayers.Concat(bTeamPlayers.Concat(spectators.Keys)).ToList()) {
+			foreach (BasePlayer p in aTeamPlayers.Concat(bTeamPlayers.Concat(spectators.Keys))) {
 				rust.SendChatMessage(p, "", "Team " + winner + " won the round!");
 			}
 
@@ -365,6 +367,7 @@ namespace Oxide.Plugins {
 				}
 			}
 
+			// TODO: Loop over players in the same loop after redesign
 			foreach (BasePlayer p in aTeamPlayers) {
 				HealAndGiveKit(p);
 				p.Teleport(GetSpawn("a"));
@@ -377,16 +380,6 @@ namespace Oxide.Plugins {
 
 			isStarted = false;
 			// Destroy placed walls, stop movement out of spawn, stop allowing placing of walls, stop damage, etc.
-		}
-
-		void HealAndGiveKit(BasePlayer p) {
-			p.inventory.Strip();
-			p.StopWounded();
-			p.metabolism.bleeding.value = 0;
-			p.metabolism.SendChangesToClient();
-			p.Heal(100);
-
-			GiveKit(p, kitAttire, kitWeapons, kitAmmo, kitMeds);
 		}
 
 		#region Events
@@ -579,6 +572,16 @@ namespace Oxide.Plugins {
 			}
 
 			return "<color=" + killerColor + ">" + killerName + "</color>" + " -> <color=" + victimColor + ">" + victimName + "</color> (" + weaponName + ") | " + distance + "m";
+		}
+
+		void HealAndGiveKit(BasePlayer p) {
+			p.inventory.Strip();
+			p.StopWounded();
+			p.metabolism.bleeding.value = 0;
+			p.metabolism.SendChangesToClient();
+			p.Heal(100);
+
+			GiveKit(p, kitAttire, kitWeapons, kitAmmo, kitMeds);
 		}
 
 		void GiveKit(BasePlayer player, List<string> attire, List<string> weapons, List<string> ammo, Dictionary<string, int> meds) {
