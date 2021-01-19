@@ -16,9 +16,9 @@ namespace Oxide.Plugins {
 		 * (maybe dont let them spectate so they can't give callouts on discord, or have no spectators at all)
 		 * 
 		 * Need a better way of finding what game and what team a player is on
-		 * (maybe a new class that contains BasePlayer with game and side information, make a list of this object and then have
+		 * (maybe a new class that contains BasePlayer with game and team information, make a list of this object and then have
 		 * a method to find the object in the list by the BasePlayer for when a hook only gives BasePlayer)
-		 * then change spectating instead of its own team to a flag (isSpectating) and then maybe make another (isOnlySpectating) if they wish to stay spectating and not join a team.
+		 * then change spectating instead of its own team to a flag (isSpectating) and then maybe make another (isOnlySpectating) if they wish to stay spectating and not join a team (or could just keep team null)
 		 * Need a way to differentiate between flats, gamemodes, etc. but also need the player to be able to be in no games (isInGame or something?) with flatID and team null for example
 		 * 
 		 * TODO: I actually like that idea ^
