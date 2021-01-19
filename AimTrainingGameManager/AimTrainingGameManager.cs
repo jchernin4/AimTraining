@@ -14,6 +14,14 @@ namespace Oxide.Plugins {
 		/**
 		 * For 1v1 ranked scrims, to make it simple have 1 arena where 2 people are fighting and have the rest spectating
 		 * (maybe dont let them spectate so they can't give callouts on discord, or have no spectators at all)
+		 * 
+		 * Need a better way of finding what game and what team a player is on
+		 * (maybe a new class that contains BasePlayer with game and side information, make a list of this object and then have
+		 * a method to find the object in the list by the BasePlayer for when a hook only gives BasePlayer)
+		 * then change spectating instead of its own team to a flag (isSpectating) and then maybe make another (isOnlySpectating) if they wish to stay spectating and not join a team.
+		 * Need a way to differentiate between flats, gamemodes, etc. but also need the player to be able to be in no games (isInGame or something?) with flatID and team null for example
+		 * 
+		 * TODO: I actually like that idea ^
 		 */
 
 		private List<Game> games;
@@ -28,19 +36,21 @@ namespace Oxide.Plugins {
 		object OnPlayerTick(BasePlayer player, PlayerTick msg, bool wasPlayerStalled) {
 			foreach (Game g in games) {
 				if (!g.isStarted) {
+					string side = null;
 
 					if (g.aTeamPlayers.Contains(player)) {
-						Vector3 curPos = player.ServerPosition;
-						if (Math.Abs(curPos.x - g.GetSpawn("a").x) > 9 || Math.Abs(curPos.z - g.GetSpawn("a").z) > 9) {
-							player.Teleport(g.GetSpawn("a"));
-						}
-
+						side = "a";
 						break;
 
 					} else if (g.bTeamPlayers.Contains(player)) {
+						side = "b";
+					}
+
+					if (side != null) {
 						Vector3 curPos = player.ServerPosition;
-						if (Math.Abs(curPos.x - g.GetSpawn("b").x) > 9 || Math.Abs(curPos.z - g.GetSpawn("b").z) > 9) {
-							player.Teleport(g.GetSpawn("b"));
+						// TODO: Test this: Vector3 diff = g.GetSpawn(side) - curPos; and compare this instead (check if Math.abs(diff.x) or Math.abs(diff.z) is greater than 9)
+						if (Math.Abs(curPos.x - g.GetSpawn(side).x) > 9 || Math.Abs(curPos.z - g.GetSpawn(side).z) > 9) {
+							player.Teleport(g.GetSpawn(side));
 						}
 
 						break;
@@ -55,15 +65,12 @@ namespace Oxide.Plugins {
 		 * Stop ingame players from taking damage unless the game they are in has started or the attacker is on the same team
 		 */
 		object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info) {
-			BasePlayer attacker = info.InitiatorPlayer;
-
-			BasePlayer victim = null;
-
-			if (info.HitEntity.GetType() == typeof(BasePlayer)) {
-				victim = (BasePlayer)info.HitEntity;
-			} else {
+			if (info.HitEntity.GetType() != typeof(BasePlayer)) {
 				return null;
 			}
+
+			BasePlayer attacker = info.InitiatorPlayer;
+			BasePlayer victim = (BasePlayer)info.HitEntity;
 
 			bool sameTeam = false;
 			bool isAttackerInGame = false;
@@ -87,7 +94,7 @@ namespace Oxide.Plugins {
 				}
 			}
 
-			// TODO: Change || sameTeam to disable friendly fire
+			// TODO: Change "|| sameTeam" to enable friendly fire
 			if (isAttackerInGame && (!attackerGame.isStarted || sameTeam)) {
 				info.damageTypes.ScaleAll(0);
 			}
@@ -95,18 +102,19 @@ namespace Oxide.Plugins {
 		}
 
 		/*
-		 * If player is going to die, instead of killing them have them heal and teleport back to their spawn (temporarily just the world spawn)
+		 * If player is going to die, instead of killing them have them heal and teleport to spectator spawn
 		 */
 		object OnPlayerDeath(BasePlayer player, HitInfo info) {
-			// Let the player die if they are connected
-
-			// TODO: Uncomment so it doesn't block death of disconnected players. Commented because bots aren't "connected" to the server so they will also be allowed to be fully killed
+			/* 
+			 * Let the player die if they are disconnected
+			 * TODO: Uncomment so it doesn't block death of disconnected players. Commented because bots aren't "connected" to the server so they will also be allowed to be fully killed
+			 */
 			/*if (!player.IsConnected) {
 				return null;
 			}*/
 
 			BasePlayer killer = info.InitiatorPlayer;
-			// Finding if the killer is in a game
+			// Checking if the killer is in a game
 			bool isKillerInGame = false;
 			Game killerGame = null;
 			foreach (Game game in games) {
@@ -126,7 +134,6 @@ namespace Oxide.Plugins {
 				player.Heal(100);
 				player.Teleport(Util.worldSpawn);
 			}
-
 
 			// Returning anything other than null overwrites default behavior (stops them from dying)
 			return 0;
@@ -166,26 +173,15 @@ namespace Oxide.Plugins {
 		[ChatCommand("flat")]
 		// TODO: If flat is full, send player to spectators, and send them back again if they try to join from spectator to a team
 		void JoinFlat(BasePlayer player, string command, string[] args) {
-			// Checking if in game --------------
-			bool playerInGame = false;
-			foreach (Game game in games) {
-				if (game.aTeamPlayers.Contains(player) || game.bTeamPlayers.Contains(player)) {
-					playerInGame = true;
-					Puts("Found player in game");
-					break;
-				}
-			}
-
-			if (playerInGame) {
-				rust.SendChatMessage(player, "", "You are already in a game. Type /leave to leave.", player.UserIDString);
-				return;
-			}
-			// ----------------------------------
-
 			if (args.Length == 1 && int.Parse(args[0]) < 9) {
 				bool gameExists = false;
 				Game runningGame = null;
 				foreach (Game g in games) {
+					if (g.aTeamPlayers.Concat(g.bTeamPlayers).ToList().Contains(player)) {
+						rust.SendChatMessage(player, "", "You are already in a game. Type /leave to leave.", player.UserIDString);
+						return;
+					}
+
 					if (g.flatID == int.Parse(args[0])) {
 						gameExists = true;
 						runningGame = g;
@@ -200,7 +196,10 @@ namespace Oxide.Plugins {
 						runningGame.OnPlayerJoinTeam(player, "a");
 					}
 
-					// If the game object was created but there aren't any active players as leader, leadership is transferred to the connecting player
+					/*
+					 * If the game object was created but there aren't any active players as leader, leadership is transferred to the connecting player.
+					 * Chances are, this will happen when there is nobody in the arena
+					 */
 					if (!runningGame.aTeamPlayers.Contains(runningGame.leader) && !runningGame.bTeamPlayers.Contains(runningGame.leader)) {
 						runningGame.OnLeaderUpdate(player);
 					}
@@ -239,7 +238,6 @@ namespace Oxide.Plugins {
 		[ChatCommand("spawn")]
 		void TeleportToSpawn(BasePlayer player, string command, string[] args) {
 			player.Teleport(Util.worldSpawn);
-			Puts("Teleported player to spawn");
 		}
 
 		[ChatCommand("start")]
@@ -253,6 +251,8 @@ namespace Oxide.Plugins {
 								foreach (BasePlayer p in g.aTeamPlayers.Concat(g.bTeamPlayers)) {
 									rust.SendChatMessage(p, "", "A round has started!");
 								}
+
+								break;
 
 							} else {
 								rust.SendChatMessage(player, "", "There are not enough players on this flat to start a game.");
