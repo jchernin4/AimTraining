@@ -37,25 +37,15 @@ namespace Oxide.Plugins {
 		// Moves players back to their team's spawn when they are too far away from it
 		object OnPlayerTick(BasePlayer player, PlayerTick msg, bool wasPlayerStalled) {
 			foreach (Flat flat in flats) {
-				if (!flat.isStarted) {
-					string side = null;
-
-					if (flat.aTeamPlayers.Contains(player)) {
-						side = "a";
-
-					} else if (flat.bTeamPlayers.Contains(player)) {
-						side = "b";
+				FlatPlayer flatPlayer = flat.FindFlatPlayer(player);
+				if (!flat.isStarted && flatPlayer != null) {
+					Vector3 curPos = player.ServerPosition;
+					// TODO: Test this: Vector3 diff = g.GetSpawn(side) - curPos; and compare this instead (check if Math.abs(diff.x) or Math.abs(diff.z) is greater than 9)
+					if (Math.Abs(curPos.x - flat.GetSpawn(flatPlayer.team).x) > 9 || Math.Abs(curPos.z - flat.GetSpawn(flatPlayer.team).z) > 9) {
+						player.Teleport(flat.GetSpawn(flatPlayer.team));
 					}
 
-					if (side != null) {
-						Vector3 curPos = player.ServerPosition;
-						// TODO: Test this: Vector3 diff = g.GetSpawn(side) - curPos; and compare this instead (check if Math.abs(diff.x) or Math.abs(diff.z) is greater than 9)
-						if (Math.Abs(curPos.x - flat.GetSpawn(side).x) > 9 || Math.Abs(curPos.z - flat.GetSpawn(side).z) > 9) {
-							player.Teleport(flat.GetSpawn(side));
-						}
-
-						break;
-					}
+					break;
 				}
 			}
 
@@ -80,30 +70,22 @@ namespace Oxide.Plugins {
 			}
 
 			bool sameTeam = false;
-			bool isAttackerInFlat = false;
-			Flat attackerFlat = null;
+			FlatPlayer attackerPlayer = null;
+			FlatPlayer victimPlayer = null;
 			foreach (Flat flat in flats) {
 				// TODO: Theres got to be a better way of doing this (new player design should make this easier)
-				if (flat.aTeamPlayers.Contains(attacker)) {
-					if (flat.aTeamPlayers.Contains(victim)) {
-						sameTeam = true;
-					}
-					isAttackerInFlat = true;
-					attackerFlat = flat;
-					break;
-
-				} else if (flat.bTeamPlayers.Contains(attacker)) {
-					if (flat.bTeamPlayers.Contains(victim)) {
-						sameTeam = true;
-					}
-					isAttackerInFlat = true;
-					attackerFlat = flat;
+				attackerPlayer = flat.FindFlatPlayer(attacker);
+				victimPlayer = flat.FindFlatPlayer(victim);
+				if (attackerPlayer != null && victimPlayer != null) {
 					break;
 				}
 			}
+			if (attackerPlayer != null && victimPlayer != null && attackerPlayer.team == victimPlayer.team) {
+				sameTeam = true;
+			}
 
 			// TODO: Remove "|| sameTeam" or add a flag (!isFriendlyFireEnabled && sameTeam) to enable friendly fire
-			if (isAttackerInFlat && (!attackerFlat.isStarted || sameTeam)) {
+			if (attackerPlayer != null && (!attackerPlayer.flat.isStarted || sameTeam)) {
 				info.damageTypes.ScaleAll(0);
 			}
 			return null;
@@ -112,7 +94,7 @@ namespace Oxide.Plugins {
 		/*
 		 * If player is going to die, instead of killing them have them heal and teleport to spectator spawn
 		 */
-		object OnPlayerDeath(BasePlayer player, HitInfo info) {
+		object OnPlayerDeath(BasePlayer victim, HitInfo info) {
 			/* 
 			 * Let the player die if they are disconnected
 			 * TODO: Uncomment so it doesn't block death of disconnected players. Commented because bots aren't "connected" to the server so they will also be allowed to be fully killed
@@ -122,25 +104,25 @@ namespace Oxide.Plugins {
 			}*/
 
 			BasePlayer killer = info.InitiatorPlayer;
-			// Checking if the killer is in a game
-			bool isKillerInFlat = false;
-			Flat killerFlat = null;
+			FlatPlayer killerPlayer = null;
+			FlatPlayer victimPlayer = null;
+
 			foreach (Flat flat in flats) {
-				if (flat.aTeamPlayers.Contains(killer) || flat.bTeamPlayers.Contains(killer)) {
-					isKillerInFlat = true;
-					killerFlat = flat;
+				killerPlayer = flat.FindFlatPlayer(killer);
+				victimPlayer = flat.FindFlatPlayer(victim);
+				if (killerPlayer != null) {
 					break;
 				}
 			}
 
-			if (isKillerInFlat) {
-				killerFlat.OnPlayerKilled(player, info, rust);
+			if (killerPlayer != null) {
+				killerPlayer.flat.OnPlayerKilled(victimPlayer, info, rust);
 
 			} else {
 				// This shouldn't happen (the killer wasn't in a game)
-				player.StopWounded();
-				player.Heal(100);
-				player.Teleport(Util.worldSpawn);
+				victimPlayer.basePlayer.StopWounded();
+				victimPlayer.basePlayer.Heal(100);
+				victimPlayer.basePlayer.Teleport(Util.worldSpawn);
 			}
 
 			// Returning anything other than null overwrites default behavior (stops them from dying)
@@ -151,8 +133,10 @@ namespace Oxide.Plugins {
 			// Killing player -> OnPlayerDeath hook, OnPlayerDeath lets the player die -> Flat.OnPlayerLeave should remove player from flat/end round if necessary
 			player.Kill();
 			foreach (Flat flat in flats) {
-				if (flat.aTeamPlayers.Contains(player) || flat.bTeamPlayers.Contains(player)) {
-					flat.OnPlayerLeave(player);
+				FlatPlayer flatPlayer = flat.FindFlatPlayer(player);
+				// Only checking A and B teams
+				if (flatPlayer != null && flat.GetTeamPlayers(FlatTeam.A).Concat(flat.GetTeamPlayers(FlatTeam.B)).ToList().Contains(flatPlayer)) {
+					flat.OnPlayerLeave(flatPlayer);
 				}
 			}
 		}
@@ -186,12 +170,16 @@ namespace Oxide.Plugins {
 			if (args.Length == 1 && int.Parse(args[0]) < 9) {
 				bool flatExists = false;
 				Flat runningFlat = null;
+
 				foreach (Flat flat in flats) {
-					if (flat.aTeamPlayers.Concat(flat.bTeamPlayers).ToList().Contains(player)) {
+					FlatPlayer flatPlayer = flat.FindFlatPlayer(player);
+					if (flatPlayer != null) {
 						rust.SendChatMessage(player, "", "You are already in a flat. Type /leave to leave.", player.UserIDString);
 						return;
 					}
-
+				}
+				// Need to be separate so all flats can be searched
+				foreach (Flat flat in flats) {
 					if (flat.flatID == int.Parse(args[0])) {
 						flatExists = true;
 						runningFlat = flat;
@@ -200,28 +188,32 @@ namespace Oxide.Plugins {
 				}
 
 				if (flatExists) {
-					if (runningFlat.aTeamPlayers.Count > runningFlat.bTeamPlayers.Count) {
-						runningFlat.OnPlayerJoinTeam(player, "b");
+					FlatPlayer newFlatPlayer;
+					if (runningFlat.GetTeamPlayers(FlatTeam.A).Count > runningFlat.GetTeamPlayers(FlatTeam.B).Count) {
+						newFlatPlayer = new FlatPlayer(player, runningFlat, false, true, FlatTeam.B);
+						runningFlat.OnPlayerJoinTeam(newFlatPlayer);
 					} else {
-						runningFlat.OnPlayerJoinTeam(player, "a");
+						newFlatPlayer = new FlatPlayer(player, runningFlat, false, true, FlatTeam.A);
+						runningFlat.OnPlayerJoinTeam(newFlatPlayer);
 					}
 
 					/*
 					 * If the game object was created but there aren't any active players as leader, leadership is transferred to the connecting player.
 					 * Chances are, this will happen when there is nobody in the arena
 					 */
-					if (!runningFlat.aTeamPlayers.Contains(runningFlat.leader) && !runningFlat.bTeamPlayers.Contains(runningFlat.leader)) {
-						runningFlat.OnLeaderUpdate(player);
+					if (!runningFlat.GetTeamPlayers(FlatTeam.A).Concat(runningFlat.GetTeamPlayers(FlatTeam.B)).Contains(runningFlat.leader)) {
+						runningFlat.OnLeaderUpdate(newFlatPlayer);
 					}
 
 				} else {
 					runningFlat = new Flat(rust);
 					runningFlat.flatID = int.Parse(args[0]);
 					// Don't call OnLeaderUpdate here because its the first time the flat is being created
-					runningFlat.leader = player;
+					FlatPlayer newFlatPlayer = new FlatPlayer(player, runningFlat, true, false, FlatTeam.A);
+					runningFlat.leader = newFlatPlayer;
 					flats.Add(runningFlat);
 
-					runningFlat.OnPlayerJoinTeam(player, "a");
+					runningFlat.OnPlayerJoinTeam(newFlatPlayer);
 				}
 
 				rust.SendChatMessage(player, "", "Sending you to flat " + args[0]);
@@ -231,12 +223,14 @@ namespace Oxide.Plugins {
 		[ChatCommand("leave")]
 		void Leave(BasePlayer player, string command, string[] args) {
 			foreach (Flat flat in flats) {
-				if (flat.aTeamPlayers.Contains(player) || flat.bTeamPlayers.Contains(player)) {
+				FlatPlayer flatPlayer = flat.FindFlatPlayer(player);
+
+				if (flatPlayer != null) {
 					if (flat.isStarted) {
 						rust.SendChatMessage(player, "", "You may not leave a flat that has already started.");
 
 					} else {
-						flat.OnPlayerLeave(player);
+						flat.OnPlayerLeave(flatPlayer);
 					}
 
 					return;
@@ -252,14 +246,17 @@ namespace Oxide.Plugins {
 
 		[ChatCommand("start")]
 		void StartFlat(BasePlayer player, string command, string[] args) {
+
 			foreach (Flat flat in flats) {
-				if (flat.aTeamPlayers.Concat(flat.bTeamPlayers).ToList().Contains(player)) {
-					if (flat.leader.Equals(player)) {
+				FlatPlayer flatPlayer = flat.FindFlatPlayer(player);
+
+				if (flatPlayer != null) {
+					if (flatPlayer.isLeader) {
 						if (!flat.isStarted) {
-							if (flat.aTeamPlayers.Count > 0 && flat.bTeamPlayers.Count > 0) {
+							if (flat.GetTeamPlayers(FlatTeam.A).Count > 0 && flat.GetTeamPlayers(FlatTeam.B).Count > 0) {
 								flat.StartRound();
-								foreach (BasePlayer p in flat.aTeamPlayers.Concat(flat.bTeamPlayers)) {
-									rust.SendChatMessage(p, "", "A round has started!");
+								foreach (FlatPlayer p in flat.players) {
+									rust.SendChatMessage(p.basePlayer, "", "A round has started!");
 								}
 
 								break;
@@ -273,7 +270,7 @@ namespace Oxide.Plugins {
 						}
 
 					} else {
-						rust.SendChatMessage(player, "", "You are not this flat's leader. Ask " + flat.leader.displayName + " to type /start");
+						rust.SendChatMessage(player, "", "You are not this flat's leader. Ask " + flat.leader.basePlayer.displayName + " to type /start");
 					}
 					return;
 				}
@@ -287,10 +284,8 @@ namespace Oxide.Plugins {
 
 	public class Flat {
 		public int flatID;
-		public BasePlayer leader;
-		public List<BasePlayer> aTeamPlayers;
-		public List<BasePlayer> bTeamPlayers;
-		public Dictionary<BasePlayer, string> spectators;
+		public FlatPlayer leader;
+		public List<FlatPlayer> players;
 
 		private Game.Rust.Libraries.Rust rust;
 
@@ -302,10 +297,6 @@ namespace Oxide.Plugins {
 		public bool isStarted;
 
 		public Flat(Game.Rust.Libraries.Rust rust) {
-			aTeamPlayers = new List<BasePlayer>();
-			bTeamPlayers = new List<BasePlayer>();
-			spectators = new Dictionary<BasePlayer, string>();
-
 			kitAttire = new List<string>();
 			kitWeapons = new List<string>();
 			kitAmmo = new List<string>();
@@ -332,74 +323,71 @@ namespace Oxide.Plugins {
 			isStarted = false;
 		}
 
+		#region Rounds
 		public void StartRound() {
 			isStarted = true;
 
-			foreach (BasePlayer p in aTeamPlayers.Concat(bTeamPlayers).ToList()) {
-				HealAndGiveKit(p);
+			foreach (FlatPlayer p in players) {
+				if (p.team == FlatTeam.A || p.team == FlatTeam.B) {
+					HealAndGiveKit(p);
+				}
 			}
 			// Allow movement/placing walls/damage/etc. (Movement is controlled in OnPlayerTick)
 		}
 
 		public void EndRound() {
-			string winner = "";
-			if (aTeamPlayers.Count == 0) {
-				winner = "B";
+			int aliveAPlayers = 0;
+			int aliveBPlayers = 0;
 
-			} else if (bTeamPlayers.Count == 0) {
-				winner = "A";
+			foreach (FlatPlayer p in players) {
+				if (!p.isSpectating) {
+					if (p.team == FlatTeam.A) {
+						aliveAPlayers++;
+					} else if (p.team == FlatTeam.B) {
+						aliveBPlayers++;
+					}
+				}
+
+			}
+			FlatTeam winner = FlatTeam.Spectator;
+			if (aliveAPlayers == 0) {
+				winner = FlatTeam.B;
+
+			} else if (aliveBPlayers == 0) {
+				winner = FlatTeam.A;
 			}
 
-			foreach (BasePlayer p in aTeamPlayers.Concat(bTeamPlayers.Concat(spectators.Keys))) {
-				rust.SendChatMessage(p, "", "Team " + winner + " won the round!");
-			}
+			foreach (FlatPlayer p in players) {
+				rust.SendChatMessage(p.basePlayer, "", "Team " + winner + " won the round!");
 
-			foreach (BasePlayer s in spectators.Keys.ToList()) {
-				string side = spectators[s];
-				// Keeping spectators.remove and teleport inside ifs so that people that aren't on a team stay as spectators
-				if (side.Equals("a")) {
-					aTeamPlayers.Add(s);
-					spectators.Remove(s);
-
-				} else if (side.Equals("b")) {
-					bTeamPlayers.Add(s);
-					spectators.Remove(s);
+				if (p.isSpectating) {
+					if (p.team == FlatTeam.A || p.team == FlatTeam.B) {
+						// Keeping inside if so that people that aren't on a team stay as spectators
+						p.isSpectating = false;
+					}
 				}
 			}
 
-			// TODO: Loop over players in the same loop after redesign
-			foreach (BasePlayer p in aTeamPlayers) {
+			foreach (FlatPlayer p in players) {
 				HealAndGiveKit(p);
-				p.Teleport(GetSpawn("a"));
-			}
-
-			foreach (BasePlayer p in bTeamPlayers) {
-				HealAndGiveKit(p);
-				p.Teleport(GetSpawn("b"));
+				p.basePlayer.Teleport(GetSpawn(p.team));
 			}
 
 			isStarted = false;
 			// Destroy placed walls, stop movement out of spawn, stop allowing placing of walls, stop damage, etc.
 		}
+		#endregion
 
 		#region Events
-		public void OnPlayerKilled(BasePlayer victim, HitInfo info, Game.Rust.Libraries.Rust rust) {
+		public void OnPlayerKilled(FlatPlayer victim, HitInfo info, Game.Rust.Libraries.Rust rust) {
 			// Send kill message
 			BasePlayer killer = info.InitiatorPlayer;
+			FlatPlayer killerPlayer = null;
 
-			string killerTeam = null;
-
-			if (aTeamPlayers.Contains(killer)) {
-				killerTeam = "a";
-			} else if (bTeamPlayers.Contains(killer)) {
-				killerTeam = "b";
-			}
-
-			string victimTeam = null;
-			if (aTeamPlayers.Contains(victim)) {
-				victimTeam = "a";
-			} else if (bTeamPlayers.Contains(victim)) {
-				victimTeam = "b";
+			foreach (FlatPlayer p in players) {
+				if (p.basePlayer.Equals(killer)) {
+					killerPlayer = p;
+				}
 			}
 
 			string weaponName;
@@ -412,183 +400,171 @@ namespace Oxide.Plugins {
 				distance = 0;
 			}
 
-			// Get kill message with colors relative to team A
-			string killMessage = GetKillMessage("a", killerTeam, victimTeam, killer.displayName, victim.displayName, weaponName, distance);
-			foreach (BasePlayer gamePlayer in aTeamPlayers) {
-				rust.SendChatMessage(gamePlayer, "", killMessage, killer.UserIDString);
+			foreach (FlatPlayer p in players) {
+				rust.SendChatMessage(p.basePlayer, "", GetKillMessage(p, killerPlayer, victim, weaponName, distance));
 			}
 
+			FullHeal(victim);
 
-			// Get kill message with colors relative to team B
-			killMessage = GetKillMessage("b", killerTeam, victimTeam, killer.displayName, victim.displayName, weaponName, distance);
-			foreach (BasePlayer gamePlayer in bTeamPlayers) {
-				rust.SendChatMessage(gamePlayer, "", killMessage, killer.UserIDString);
-			}
-
-			// Get kill message with colors relative to spectators
-			killMessage = GetKillMessageSpectator(killer.displayName, victim.displayName, weaponName, distance);
-			foreach (BasePlayer spectator in spectators.Keys) {
-				rust.SendChatMessage(spectator, "", killMessage, killer.UserIDString);
-			}
-
-			victim.StopWounded();
-			victim.metabolism.bleeding.value = 0;
-			victim.metabolism.SendChangesToClient();
-			victim.Heal(100);
-
-			// Add victim to spectators
-			if (victimTeam.Equals("a")) {
-				aTeamPlayers.Remove(victim);
-				spectators.Add(victim, "a");
-
-			} else if (victimTeam.Equals("b")) {
-				bTeamPlayers.Remove(victim);
-				spectators.Add(victim, "b");
-			}
-			// Teleport victim to spectator area
-			victim.Teleport(GetSpecSpawn());
+			victim.isSpectating = true;
+			victim.basePlayer.Teleport(GetSpecSpawn());
 
 			// If the game is finished
-			if (aTeamPlayers.Count == 0 || bTeamPlayers.Count == 0) {
+			if (GetTeamPlayers(FlatTeam.A).Count == 0 || GetTeamPlayers(FlatTeam.B).Count == 0) {
 				EndRound();
 			}
 		}
 
-		public void OnPlayerJoinTeam(BasePlayer player, string side) {
-			player.metabolism.bleeding.value = 0;
-			player.metabolism.SendChangesToClient();
-			player.Heal(100);
+		public void OnPlayerJoinTeam(FlatPlayer player) {
+			player.basePlayer.metabolism.bleeding.value = 0;
+			player.basePlayer.metabolism.SendChangesToClient();
+			player.basePlayer.Heal(100);
 
 			// Check if they just want to join spectators and not A/B
-			if (side.Equals("s")) {
-				aTeamPlayers.Remove(player);
-				bTeamPlayers.Remove(player);
-				spectators[player] = "s";
-
-				player.Teleport(GetSpecSpawn());
+			if (player.team == FlatTeam.Spectator) {
+				player.basePlayer.Teleport(GetSpecSpawn());
 				return;
 			}
 
 			// If the game isn't started, add player to team, else put them in spectators with the side they want to join saved for next round
 			if (!isStarted) {
-				if (side.Equals("a")) {
-					aTeamPlayers.Add(player);
-					bTeamPlayers.Remove(player);
-
-				} else if (side.Equals("b")) {
-					bTeamPlayers.Add(player);
-					aTeamPlayers.Remove(player);
-
-				} else
-
-					HealAndGiveKit(player);
-				player.Teleport(GetSpawn(side));
+				HealAndGiveKit(player);
+				player.basePlayer.Teleport(GetSpawn(player.team));
 
 			} else {
-				spectators.Add(player, side);
-				player.Teleport(GetSpecSpawn());
+				player.isSpectating = true;
+				player.basePlayer.Teleport(GetSpecSpawn());
 			}
 
-			string message = "<color=#02f0e8>" + player.displayName + "</color> has joined team " + side.ToUpper();
-			foreach (BasePlayer p in aTeamPlayers) {
-				rust.SendChatMessage(p, "", message);
-			}
-			foreach (BasePlayer p in bTeamPlayers) {
-				rust.SendChatMessage(p, "", message);
-			}
-			foreach (BasePlayer p in spectators.Keys) {
-				rust.SendChatMessage(p, "", message);
+			string message = "<color=#02f0e8>" + player.basePlayer.displayName + "</color> has joined team " + player.team.ToString().ToUpper();
+			foreach (FlatPlayer p in players) {
+				rust.SendChatMessage(p.basePlayer, "", message);
 			}
 		}
 
 		// TODO: If a player leaves, the game won't end, so you should make it as if they died
-		public void OnPlayerLeave(BasePlayer leftPlayer) {
-			aTeamPlayers.Remove(leftPlayer);
-			bTeamPlayers.Remove(leftPlayer);
-			spectators.Remove(leftPlayer);
+		public void OnPlayerLeave(FlatPlayer leftPlayer) {
+			List<FlatPlayer> activePlayers = GetTeamPlayers(FlatTeam.A).Concat(GetTeamPlayers(FlatTeam.B)).ToList();
+			int aPlayers = GetTeamPlayers(FlatTeam.A).Count;
+			int bPlayers = GetTeamPlayers(FlatTeam.B).Count;
+
+			players.Remove(leftPlayer);
 
 			// Check if they are connected, since this is called when players leave the server too
-			if (leftPlayer.IsConnected) {
-				leftPlayer.metabolism.calories.value = 500;
-				leftPlayer.metabolism.hydration.value = 250;
-				leftPlayer.metabolism.SendChangesToClient();
+			if (leftPlayer.basePlayer.IsConnected) {
+				leftPlayer.basePlayer.metabolism.calories.value = 500;
+				leftPlayer.basePlayer.metabolism.hydration.value = 250;
+				leftPlayer.basePlayer.metabolism.SendChangesToClient();
 
-				leftPlayer.inventory.Strip();
-				leftPlayer.Heal(100);
+				leftPlayer.basePlayer.inventory.Strip();
+				leftPlayer.basePlayer.Heal(100);
 
-				leftPlayer.EnsureDismounted();
-				if (leftPlayer.HasParent()) {
-					leftPlayer.SetParent(null, true, true);
+				leftPlayer.basePlayer.EnsureDismounted();
+				if (leftPlayer.basePlayer.HasParent()) {
+					leftPlayer.basePlayer.SetParent(null, true, true);
 				}
 
-				leftPlayer.EndLooting();
-				leftPlayer.StartSleeping();
-				leftPlayer.RemoveFromTriggers();
+				leftPlayer.basePlayer.EndLooting();
+				leftPlayer.basePlayer.StartSleeping();
+				leftPlayer.basePlayer.RemoveFromTriggers();
 
-				leftPlayer.Teleport(Util.worldSpawn);
+				leftPlayer.basePlayer.Teleport(Util.worldSpawn);
 			}
 
-			if (leader.Equals(leftPlayer)) {
-				List<BasePlayer> allPlayers = aTeamPlayers.Concat(bTeamPlayers).ToList();
-				if (allPlayers.Count > 0) {
-					int index = new System.Random().Next(allPlayers.Count);
-					leader = allPlayers[index];
-					OnLeaderUpdate(leader);
-				}
+			if (leader.Equals(leftPlayer) && activePlayers.Count > 0) {
+				int index = new System.Random().Next(activePlayers.Count);
+				leader = activePlayers[index];
+				OnLeaderUpdate(leader);
 			}
 
-			if (aTeamPlayers.Count == 0 || bTeamPlayers.Count == 0) {
+			if (aPlayers == 0 || bPlayers == 0) {
 				EndRound();
 			}
 		}
 
-		public void OnLeaderUpdate(BasePlayer newLeader) {
+		public void OnLeaderUpdate(FlatPlayer newLeader) {
 			leader = newLeader;
-			List<BasePlayer> allPlayers = aTeamPlayers.Concat(bTeamPlayers).Concat(spectators.Keys).ToList();
-			foreach (BasePlayer p in allPlayers) {
-				rust.SendChatMessage(p, "", "<color=#02f0e8>" + p.displayName + "</color> has been made leader.");
+			foreach (FlatPlayer p in players) {
+				rust.SendChatMessage(p.basePlayer, "", "<color=#02f0e8>" + newLeader.basePlayer.displayName + "</color> has been made leader.");
 			}
 		}
 		#endregion
 
 		#region Utils
 
-		private string GetKillMessageSpectator(string killerName, string victimName, string weaponName, int distance) {
-			// #f09902 is orange
-			return "<color=#f09902>" + killerName + "</color>" + " -> <color=#f09902>" + victimName + "</color> (" + weaponName + ") | " + distance + "m";
+		public void FullHeal(FlatPlayer player) {
+			player.basePlayer.StopWounded();
+			player.basePlayer.metabolism.bleeding.value = 0;
+			player.basePlayer.metabolism.SendChangesToClient();
+			player.basePlayer.Heal(100);
 		}
 
-		private string GetKillMessage(string receiverTeam, string killerTeam, string victimTeam, string killerName, string victimName, string weaponName, int distance) {
+		public FlatPlayer FindFlatPlayer(BasePlayer player) {
+			foreach (FlatPlayer p in players) {
+				if (p.basePlayer.Equals(player)) {
+					return p;
+				}
+			}
+
+			return null;
+		}
+
+		public List<FlatPlayer> GetTeamPlayers(FlatTeam team) {
+			List<FlatPlayer> playerList = new List<FlatPlayer>();
+			foreach (FlatPlayer p in players) {
+				if (p.team == team) {
+					playerList.Add(p);
+				}
+			}
+
+			return playerList;
+		}
+
+		private string GetKillMessage(FlatPlayer receiver, FlatPlayer killer, FlatPlayer victim, string weaponName, int distance) {
 			string red = "#f02702";
 			string blue = "#0281f0";
+			string orange = "#f09902";
 			string killerColor = red;
 			string victimColor = red;
 
-			if (receiverTeam.Equals(killerTeam)) {
-				killerColor = blue;
-			}
-			if (receiverTeam.Equals(victimTeam)) {
-				victimColor = blue;
+			if (receiver.team == FlatTeam.Spectator) {
+				killerColor = orange;
+				victimColor = orange;
+
+			} else {
+				if (receiver.team == killer.team) {
+					killerColor = blue;
+
+				} else {
+					killerColor = red;
+				}
+
+				if (receiver.team == victim.team) {
+					victimColor = blue;
+
+				} else {
+					victimColor = red;
+				}
 			}
 
-			return "<color=" + killerColor + ">" + killerName + "</color>" + " -> <color=" + victimColor + ">" + victimName + "</color> (" + weaponName + ") | " + distance + "m";
+			return "<color=" + killerColor + ">" + killer.basePlayer.displayName + "</color>" + " -> <color=" + victimColor + ">" + victim.basePlayer.displayName + "</color> (" + weaponName + ") | " + distance + "m";
 		}
 
-		void HealAndGiveKit(BasePlayer p) {
-			p.inventory.Strip();
-			p.StopWounded();
-			p.metabolism.bleeding.value = 0;
-			p.metabolism.SendChangesToClient();
-			p.Heal(100);
+		void HealAndGiveKit(FlatPlayer p) {
+			p.basePlayer.inventory.Strip();
+			p.basePlayer.StopWounded();
+			p.basePlayer.metabolism.bleeding.value = 0;
+			p.basePlayer.metabolism.SendChangesToClient();
+			p.basePlayer.Heal(100);
 
 			GiveKit(p, kitAttire, kitWeapons, kitAmmo, kitMeds);
 		}
 
-		void GiveKit(BasePlayer player, List<string> attire, List<string> weapons, List<string> ammo, Dictionary<string, int> meds) {
-			player.inventory.Strip();
+		void GiveKit(FlatPlayer player, List<string> attire, List<string> weapons, List<string> ammo, Dictionary<string, int> meds) {
+			player.basePlayer.inventory.Strip();
 
 			foreach (string a in attire) {
-				player.inventory.containerWear.AddItem(ItemManager.FindItemDefinition(a), 1);
+				player.basePlayer.inventory.containerWear.AddItem(ItemManager.FindItemDefinition(a), 1);
 			}
 			foreach (string w in weapons) {
 				Item weaponItem = ItemManager.CreateByName(w);
@@ -596,20 +572,20 @@ namespace Oxide.Plugins {
 				if (heldEnt != null) {
 					heldEnt.primaryMagazine.contents = heldEnt.primaryMagazine.capacity;
 				}
-				player.inventory.GiveItem(weaponItem);
+				player.basePlayer.inventory.GiveItem(weaponItem);
 			}
 			foreach (string a in ammo) {
-				player.inventory.GiveItem(ItemManager.CreateByName(a, 1000));
+				player.basePlayer.inventory.GiveItem(ItemManager.CreateByName(a, 1000));
 			}
 			foreach (string m in meds.Keys) {
-				player.inventory.GiveItem(ItemManager.CreateByName(m, meds[m]));
+				player.basePlayer.inventory.GiveItem(ItemManager.CreateByName(m, meds[m]));
 			}
 		}
 
-		public Vector3 GetSpawn(string side) {
-			float x = float.Parse(Util.flatConfig[flatID.ToString(), side + "SpawnX"].ToString());
-			float y = float.Parse(Util.flatConfig[flatID.ToString(), side + "SpawnY"].ToString());
-			float z = float.Parse(Util.flatConfig[flatID.ToString(), side + "SpawnZ"].ToString());
+		public Vector3 GetSpawn(FlatTeam team) {
+			float x = float.Parse(Util.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnX"].ToString());
+			float y = float.Parse(Util.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnY"].ToString());
+			float z = float.Parse(Util.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnZ"].ToString());
 
 			return new Vector3(x, y, z);
 		}
@@ -622,6 +598,12 @@ namespace Oxide.Plugins {
 			return new Vector3(x, y, z);
 		}
 		#endregion
+	}
+
+	public enum FlatTeam {
+		A,
+		B,
+		Spectator
 	}
 
 	public class Util {
@@ -640,6 +622,23 @@ namespace Oxide.Plugins {
 			flatConfig["0", "spectatorSpawnY"] = 5.2;
 			flatConfig["0", "spectatorSpawnZ"] = 0;
 			flatConfig.Save();
+		}
+	}
+
+	public class FlatPlayer {
+		// Team is "Spectator" if only spectator (not on a team)
+		public BasePlayer basePlayer;
+		public Flat flat;
+		public bool isLeader;
+		public bool isSpectating;
+		public FlatTeam team;
+
+		public FlatPlayer(BasePlayer player, Flat flat, bool isLeader, bool isSpectating, FlatTeam team) {
+			this.basePlayer = player;
+			this.flat = flat;
+			this.isLeader = isLeader;
+			this.isSpectating = isSpectating;
+			this.team = team;
 		}
 	}
 }
