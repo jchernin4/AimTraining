@@ -42,7 +42,6 @@ namespace Oxide.Plugins {
 
 					if (flat.aTeamPlayers.Contains(player)) {
 						side = "a";
-						break;
 
 					} else if (flat.bTeamPlayers.Contains(player)) {
 						side = "b";
@@ -67,6 +66,7 @@ namespace Oxide.Plugins {
 		 * Stop ingame players from taking damage unless the game they are in has started or the attacker is on the same team
 		 */
 		object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info) {
+			// Ignore entitys taking damage that aren't players to prevent errors on casting
 			if (info.HitEntity.GetType() != typeof(BasePlayer)) {
 				return null;
 			}
@@ -74,10 +74,16 @@ namespace Oxide.Plugins {
 			BasePlayer attacker = info.InitiatorPlayer;
 			BasePlayer victim = (BasePlayer)info.HitEntity;
 
+			// Allow the player to kill themselves
+			if (attacker.Equals(victim)) {
+				return null;
+			}
+
 			bool sameTeam = false;
 			bool isAttackerInFlat = false;
 			Flat attackerFlat = null;
 			foreach (Flat flat in flats) {
+				// TODO: Theres got to be a better way of doing this (new player design should make this easier)
 				if (flat.aTeamPlayers.Contains(attacker)) {
 					if (flat.aTeamPlayers.Contains(victim)) {
 						sameTeam = true;
@@ -96,7 +102,7 @@ namespace Oxide.Plugins {
 				}
 			}
 
-			// TODO: Change "|| sameTeam" to enable friendly fire
+			// TODO: Remove "|| sameTeam" or add a flag (!isFriendlyFireEnabled && sameTeam) to enable friendly fire
 			if (isAttackerInFlat && (!attackerFlat.isStarted || sameTeam)) {
 				info.damageTypes.ScaleAll(0);
 			}
