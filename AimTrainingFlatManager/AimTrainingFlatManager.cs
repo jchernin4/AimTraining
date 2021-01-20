@@ -30,7 +30,7 @@ namespace Oxide.Plugins {
 
 		#region Oxide Hooks
 		void Init() {
-			Util.initFlatConfig();
+			Utils.initFlatConfig();
 			flats = new List<Flat>();
 		}
 
@@ -38,8 +38,9 @@ namespace Oxide.Plugins {
 		object OnPlayerTick(BasePlayer player, PlayerTick msg, bool wasPlayerStalled) {
 			foreach (Flat flat in flats) {
 				FlatPlayer flatPlayer = flat.FindFlatPlayer(player);
-				if (!flat.isStarted && flatPlayer != null) {
-					Vector3 curPos = player.ServerPosition;
+
+				if (flatPlayer != null && !flat.isStarted) {
+					Vector3 curPos = flatPlayer.basePlayer.ServerPosition;
 					// TODO: Test this: Vector3 diff = g.GetSpawn(side) - curPos; and compare this instead (check if Math.abs(diff.x) or Math.abs(diff.z) is greater than 9)
 					if (Math.Abs(curPos.x - flat.GetSpawn(flatPlayer.team).x) > 9 || Math.Abs(curPos.z - flat.GetSpawn(flatPlayer.team).z) > 9) {
 						player.Teleport(flat.GetSpawn(flatPlayer.team));
@@ -122,7 +123,7 @@ namespace Oxide.Plugins {
 				// This shouldn't happen (the killer wasn't in a game)
 				victimPlayer.basePlayer.StopWounded();
 				victimPlayer.basePlayer.Heal(100);
-				victimPlayer.basePlayer.Teleport(Util.worldSpawn);
+				victimPlayer.basePlayer.Teleport(Utils.worldSpawn);
 			}
 
 			// Returning anything other than null overwrites default behavior (stops them from dying)
@@ -143,7 +144,7 @@ namespace Oxide.Plugins {
 
 		// Spawn at spawn
 		object OnPlayerRespawn(BasePlayer player) {
-			return new BasePlayer.SpawnPoint() { pos = Util.worldSpawn, rot = new UnityEngine.Quaternion(0, 0, 0, 1) };
+			return new BasePlayer.SpawnPoint() { pos = Utils.worldSpawn, rot = new UnityEngine.Quaternion(0, 0, 0, 1) };
 		}
 
 		void OnEntitySpawned(BaseNetworkable entity) {
@@ -241,7 +242,7 @@ namespace Oxide.Plugins {
 
 		[ChatCommand("spawn")]
 		void TeleportToSpawn(BasePlayer player, string command, string[] args) {
-			player.Teleport(Util.worldSpawn);
+			player.Teleport(Utils.worldSpawn);
 		}
 
 		[ChatCommand("start")]
@@ -259,7 +260,7 @@ namespace Oxide.Plugins {
 									rust.SendChatMessage(p.basePlayer, "", "A round has started!");
 								}
 
-								break;
+								return;
 
 							} else {
 								rust.SendChatMessage(player, "", "There are not enough players on this flat to start.");
@@ -282,6 +283,7 @@ namespace Oxide.Plugins {
 		#endregion
 	}
 
+
 	public class Flat {
 		public int flatID;
 		public FlatPlayer leader;
@@ -297,6 +299,7 @@ namespace Oxide.Plugins {
 		public bool isStarted;
 
 		public Flat(Game.Rust.Libraries.Rust rust) {
+			players = new List<FlatPlayer>();
 			kitAttire = new List<string>();
 			kitWeapons = new List<string>();
 			kitAmmo = new List<string>();
@@ -404,8 +407,8 @@ namespace Oxide.Plugins {
 				rust.SendChatMessage(p.basePlayer, "", GetKillMessage(p, killerPlayer, victim, weaponName, distance));
 			}
 
-			FullHeal(victim);
-
+			Utils.FullHeal(victim.basePlayer);
+			victim.basePlayer.inventory.Strip();
 			victim.isSpectating = true;
 			victim.basePlayer.Teleport(GetSpecSpawn());
 
@@ -416,9 +419,7 @@ namespace Oxide.Plugins {
 		}
 
 		public void OnPlayerJoinTeam(FlatPlayer player) {
-			player.basePlayer.metabolism.bleeding.value = 0;
-			player.basePlayer.metabolism.SendChangesToClient();
-			player.basePlayer.Heal(100);
+			Utils.FullHeal(player.basePlayer);
 
 			// Check if they just want to join spectators and not A/B
 			if (player.team == FlatTeam.Spectator) {
@@ -440,6 +441,8 @@ namespace Oxide.Plugins {
 			foreach (FlatPlayer p in players) {
 				rust.SendChatMessage(p.basePlayer, "", message);
 			}
+
+			players.Add(player);
 		}
 
 		// TODO: If a player leaves, the game won't end, so you should make it as if they died
@@ -457,7 +460,7 @@ namespace Oxide.Plugins {
 				leftPlayer.basePlayer.metabolism.SendChangesToClient();
 
 				leftPlayer.basePlayer.inventory.Strip();
-				leftPlayer.basePlayer.Heal(100);
+				Utils.FullHeal(leftPlayer.basePlayer);
 
 				leftPlayer.basePlayer.EnsureDismounted();
 				if (leftPlayer.basePlayer.HasParent()) {
@@ -468,7 +471,7 @@ namespace Oxide.Plugins {
 				leftPlayer.basePlayer.StartSleeping();
 				leftPlayer.basePlayer.RemoveFromTriggers();
 
-				leftPlayer.basePlayer.Teleport(Util.worldSpawn);
+				leftPlayer.basePlayer.Teleport(Utils.worldSpawn);
 			}
 
 			if (leader.Equals(leftPlayer) && activePlayers.Count > 0) {
@@ -491,13 +494,6 @@ namespace Oxide.Plugins {
 		#endregion
 
 		#region Utils
-
-		public void FullHeal(FlatPlayer player) {
-			player.basePlayer.StopWounded();
-			player.basePlayer.metabolism.bleeding.value = 0;
-			player.basePlayer.metabolism.SendChangesToClient();
-			player.basePlayer.Heal(100);
-		}
 
 		public FlatPlayer FindFlatPlayer(BasePlayer player) {
 			foreach (FlatPlayer p in players) {
@@ -552,10 +548,7 @@ namespace Oxide.Plugins {
 
 		void HealAndGiveKit(FlatPlayer p) {
 			p.basePlayer.inventory.Strip();
-			p.basePlayer.StopWounded();
-			p.basePlayer.metabolism.bleeding.value = 0;
-			p.basePlayer.metabolism.SendChangesToClient();
-			p.basePlayer.Heal(100);
+			Utils.FullHeal(p.basePlayer);
 
 			GiveKit(p, kitAttire, kitWeapons, kitAmmo, kitMeds);
 		}
@@ -583,17 +576,17 @@ namespace Oxide.Plugins {
 		}
 
 		public Vector3 GetSpawn(FlatTeam team) {
-			float x = float.Parse(Util.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnX"].ToString());
-			float y = float.Parse(Util.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnY"].ToString());
-			float z = float.Parse(Util.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnZ"].ToString());
+			float x = float.Parse(Utils.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnX"].ToString());
+			float y = float.Parse(Utils.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnY"].ToString());
+			float z = float.Parse(Utils.flatConfig[flatID.ToString(), team.ToString().ToLower() + "SpawnZ"].ToString());
 
 			return new Vector3(x, y, z);
 		}
 
 		public Vector3 GetSpecSpawn() {
-			float x = float.Parse(Util.flatConfig[flatID.ToString(), "spectatorSpawnX"].ToString());
-			float y = float.Parse(Util.flatConfig[flatID.ToString(), "spectatorSpawnY"].ToString());
-			float z = float.Parse(Util.flatConfig[flatID.ToString(), "spectatorSpawnZ"].ToString());
+			float x = float.Parse(Utils.flatConfig[flatID.ToString(), "spectatorSpawnX"].ToString());
+			float y = float.Parse(Utils.flatConfig[flatID.ToString(), "spectatorSpawnY"].ToString());
+			float z = float.Parse(Utils.flatConfig[flatID.ToString(), "spectatorSpawnZ"].ToString());
 
 			return new Vector3(x, y, z);
 		}
@@ -606,9 +599,21 @@ namespace Oxide.Plugins {
 		Spectator
 	}
 
-	public class Util {
+	public class Utils {
 		public static Vector3 worldSpawn = new Vector3(-185f, 8f, -344f);
 		public static DynamicConfigFile flatConfig = Interface.Oxide.DataFileSystem.GetDatafile("FlatConfig");
+
+		/// <summary>
+		/// Picks player up if wounded, stops bleeding, heals to full
+		/// </summary>
+		/// <param name="player">Player to heal</param>
+		public static void FullHeal(BasePlayer player) {
+			player.StopWounded();
+			player.metabolism.bleeding.value = 0;
+			player.metabolism.SendChangesToClient();
+			player.Heal(100);
+		}
+
 		public static void initFlatConfig() {
 			flatConfig["0", "aSpawnX"] = 0;
 			flatConfig["0", "aSpawnY"] = 5.2;
