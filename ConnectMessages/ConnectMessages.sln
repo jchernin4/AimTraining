@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30717.126
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectMessages", "ConnectMessages.csproj", "{06762D3D-7F2E-427B-BB60-CF863B63D584}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{06762D3D-7F2E-427B-BB60-CF863B63D584}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{06762D3D-7F2E-427B-BB60-CF863B63D584}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{06762D3D-7F2E-427B-BB60-CF863B63D584}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{06762D3D-7F2E-427B-BB60-CF863B63D584}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BB24AE4D-AD8D-46CB-8F00-10BB8DE6525C}
+	EndGlobalSection
+EndGlobal

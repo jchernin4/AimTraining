@@ -10,27 +10,21 @@ using UnityEngine;
 namespace Oxide.Plugins {
 	[Info("Aim Training Flat Manager", "Fyre", "0.0.1")]
 	public class AimTrainingFlatManager : RustPlugin {
-
 		/**
 		 * For 1v1 ranked scrims, to make it simple have 1 arena where 2 people are fighting and have the rest spectating
 		 * (maybe dont let them spectate so they can't give callouts on discord, or have no spectators at all)
 		 * 
-		 * Need a better way of finding what game and what team a player is on
-		 * (maybe a new class that contains BasePlayer with game and team information, make a list of this object and then have
-		 * a method to find the object in the list by the BasePlayer for when a hook only gives BasePlayer)
-		 * then change spectating instead of its own team to a flag (isSpectating) and then maybe make another (isOnlySpectating) if they wish to stay spectating and not join a team (or could just keep team null)
-		 * Need a way to differentiate between flats, gamemodes, etc. but also need the player to be able to be in no games (isInGame or something?) with flatID and team null for example
+		 * then change spectating instead of its own team to a flag (isSpectating) and then maybe make another team (Spectator) for people that want to stay as spectators
 		 * 
 		 * Need to keep this on its own so it doesn't interfere with other plugins (this should just work for people in flats, and ignore everyone else) ^
 		 * 
-		 * TODO: I actually like that idea ^
 		 */
 
 		private List<Flat> flats;
 
 		#region Oxide Hooks
 		void Init() {
-			Utils.initFlatConfig();
+			Utils.InitFlatConfig();
 			flats = new List<Flat>();
 		}
 
@@ -74,7 +68,6 @@ namespace Oxide.Plugins {
 			FlatPlayer attackerPlayer = null;
 			FlatPlayer victimPlayer = null;
 			foreach (Flat flat in flats) {
-				// TODO: Theres got to be a better way of doing this (new player design should make this easier)
 				attackerPlayer = flat.FindFlatPlayer(attacker);
 				victimPlayer = flat.FindFlatPlayer(victim);
 				if (attackerPlayer != null && victimPlayer != null) {
@@ -144,7 +137,7 @@ namespace Oxide.Plugins {
 
 		// Spawn at spawn
 		object OnPlayerRespawn(BasePlayer player) {
-			return new BasePlayer.SpawnPoint() { pos = Utils.worldSpawn, rot = new UnityEngine.Quaternion(0, 0, 0, 1) };
+			return new BasePlayer.SpawnPoint() { pos = Utils.worldSpawn, rot = new Quaternion(0, 0, 0, 1) };
 		}
 
 		void OnEntitySpawned(BaseNetworkable entity) {
@@ -614,7 +607,7 @@ namespace Oxide.Plugins {
 			player.Heal(100);
 		}
 
-		public static void initFlatConfig() {
+		public static void InitFlatConfig() {
 			flatConfig["0", "aSpawnX"] = 0;
 			flatConfig["0", "aSpawnY"] = 5.2;
 			flatConfig["0", "aSpawnZ"] = -70;

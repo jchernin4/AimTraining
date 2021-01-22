@@ -5,8 +5,8 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Oxide.Plugins {
-	[Info("Aim Training Utilities", "Fyre", "0.0.1")]
-	public class AimTrainingUtilities : RustPlugin {
+	[Info("Utilities", "Fyre", "1.0.0")]
+	public class Utilities : RustPlugin {
 		#region Oxide Hooks
 		void Init() {
 			Server.Command("decay.upkeep", "false");
@@ -29,14 +29,6 @@ namespace Oxide.Plugins {
 					}
 				}
 			});
-		}
-
-		void OnPlayerConnected(BasePlayer player) {
-			Server.Broadcast("<color=#00bbee>" + player.displayName + "</color> <color=#ffffff>has joined.</color>");
-		}
-
-		void OnPlayerDisconnected(BasePlayer player, string reason) {
-			Server.Broadcast("<color=#00bbee>" + player.displayName + "</color> <color=#ffffff>has disconnected.");
 		}
 
 		void OnItemDropped(Item item, BaseEntity entity) {
